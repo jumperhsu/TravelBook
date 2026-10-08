@@ -75,12 +75,13 @@
   }
   #reader[hidden] { display: none; }
 
+  /* ---------- 頂部欄（精簡版：高度約為原本一半） ---------- */
   #topbar {
     flex: none;
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: calc(env(safe-area-inset-top) + 8px) 12px 8px;
+    gap: 6px;
+    padding: calc(env(safe-area-inset-top) + 4px) 10px 4px;
     background: rgba(12, 14, 18, 0.94);
     backdrop-filter: blur(20px) saturate(160%);
     -webkit-backdrop-filter: blur(20px) saturate(160%);
@@ -90,7 +91,8 @@
 
   .btn-icon {
     flex: none;
-    width: 38px; height: 38px;
+    width: 28px;
+    height: 28px;
     padding: 0;
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.08);
@@ -106,16 +108,22 @@
     border-color: rgba(91, 140, 255, 0.5);
     color: #cfe0ff;
   }
-  .btn-icon svg { display: block; }
+  /* 縮放 SVG 圖示，配合較小的按鈕尺寸 */
+  .btn-icon svg {
+    display: block;
+    width: 14px;
+    height: 14px;
+  }
 
   #hudTitle {
     flex: 1; min-width: 0;
     text-align: center;
-    font-size: 13px; font-weight: 500;
+    font-size: 12px;
+    font-weight: 500;
     color: var(--text-soft);
     letter-spacing: .03em;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    padding: 0 4px;
+    padding: 0 2px;
   }
 
   /* ==========================================================
@@ -131,7 +139,6 @@
     touch-action: none;
     -webkit-user-select: none; user-select: none;
     -webkit-touch-callout: none;
-    /* 書脊：整個舞台左緣固定漸層陰影，營造書本裝訂處的深度感 */
     background-image:
       linear-gradient(to right,
         rgba(0, 0, 0, 0.55) 0%,
@@ -149,8 +156,6 @@
 
   /* ==========================================================
      .page 基本樣式
-     - transform-origin 設在左側（書脊），讓翻頁以書脊為軸
-     - preserve-3d 讓子層與偽元素正確做 3D 疊層
      ========================================================== */
   .page {
     position: absolute; inset: 0;
@@ -166,11 +171,12 @@
     align-items: center;
     justify-content: center;
 
-    /* 頁面右側邊緣的微陰影，模擬下方紙張堆疊出的厚度 */
     box-shadow:
       inset -3px 0 10px -2px rgba(0, 0, 0, 0.45),
       inset 0 0 0 1px rgba(255, 255, 255, 0.02);
   }
+
+  .page.no-anim { transition: none !important; }
 
   .page img {
     display: block;
@@ -184,18 +190,10 @@
     position: relative;
     z-index: 1;
 
-    /* 紙張翻過 90 度後，圖片背面自動隱藏 */
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
   }
 
-  /* ==========================================================
-     紙張背面
-     當 .page 旋轉超過 -90 度時，img 因 backface-visibility 隱藏，
-     由 ::after 提供「紙張背面」的暗色漸層質感。
-     ::after 自身再 rotateY(180deg) 並配合 backface-visibility，
-     讓它只在「翻過去之後」才顯示。
-     ========================================================== */
   .page::after {
     content: '';
     position: absolute;
@@ -213,10 +211,6 @@
     z-index: 0;
   }
 
-  /* ==========================================================
-     動態光影：翻頁過程中的紙張反光與陰影變化
-     .flipping 只在翻頁期間短暫存在（由 JS 加上／移除）
-     ========================================================== */
   .page::before {
     content: '';
     position: absolute;
@@ -225,13 +219,11 @@
     z-index: 3;
     opacity: 0;
     background:
-      /* 從書脊（左）往右的固定書脊陰影 */
       linear-gradient(to right,
         rgba(0, 0, 0, 0.42) 0%,
         rgba(0, 0, 0, 0.16) 4%,
         rgba(0, 0, 0, 0.04) 9%,
         transparent 16%),
-      /* 從右緣往內的厚度陰影 */
       linear-gradient(to left,
         rgba(0, 0, 0, 0.28) 0%,
         rgba(0, 0, 0, 0.08) 3%,
@@ -307,7 +299,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: flex-start;   /* 圖片從頂部開始，貼齊工具列 */
+      justify-content: flex-start;
       overflow-y: auto;
       overflow-x: hidden;
       -webkit-overflow-scrolling: touch;
@@ -322,7 +314,7 @@
       max-width: none;
       max-height: none;
       object-fit: fill;
-      margin: 0;    /* 貼齊容器頂部，不再留白 */
+      margin: 0;
     }
   }
 
@@ -431,8 +423,8 @@
 <div id="reader" hidden>
   <div id="topbar">
     <button id="btnHome" class="btn-icon" aria-label="回到第一頁">
-      <svg width="18" height="18" viewBox="0 0 24 24"
-           fill="none" stroke="currentColor" stroke-width="2.2"
+      <svg viewBox="0 0 24 24"
+           fill="none" stroke="currentColor" stroke-width="2.4"
            stroke-linecap="round" stroke-linejoin="round">
         <path d="M3 10.5L12 3l9 7.5"/>
         <path d="M5 9.8V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.8"/>
@@ -481,10 +473,10 @@ const hintEl    = document.getElementById('hint');
 const FLIP_MS    = 700;
 const DBL_TAP_MS = 260;
 
-/* ---- 圖示 ---- */
+/* ---- 圖示（不含尺寸，尺寸由 CSS 控制） ---- */
 const SVG_ZOOM_IN =
-  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" ' +
-  'stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<svg viewBox="0 0 24 24" fill="none" ' +
+  'stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">' +
   '<circle cx="11" cy="11" r="7"/>' +
   '<path d="M21 21l-4.3-4.3"/>' +
   '<line x1="11" y1="8" x2="11" y2="14"/>' +
@@ -492,8 +484,8 @@ const SVG_ZOOM_IN =
   '</svg>';
 
 const SVG_ZOOM_OUT =
-  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" ' +
-  'stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<svg viewBox="0 0 24 24" fill="none" ' +
+  'stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">' +
   '<circle cx="11" cy="11" r="7"/>' +
   '<path d="M21 21l-4.3-4.3"/>' +
   '<line x1="8" y1="11" x2="14" y2="11"/>' +
@@ -610,7 +602,6 @@ function refreshZIndex() {
   });
 }
 
-/** 立即改變 transform，不觸發 transition */
 function setTransformInstant(el, transform) {
   el.classList.add('no-anim');
   el.style.transform = transform;
@@ -650,15 +641,12 @@ function goNext() {
   const curEl  = pageEls[cur];
   const nextEl = pageEls[cur + 1];
 
-  // 下一頁：先瞬間擺回正面（0 度），墊在底層
   setTransformInstant(nextEl, 'rotateY(0deg)');
   nextEl.style.zIndex = '1';
   nextEl.scrollTop = 0;
 
-  // 當前頁：移到上層準備翻出
   curEl.style.zIndex = '2';
 
-  // 加上光影 class，再觸發旋轉
   curEl.classList.add('flipping');
   void curEl.offsetWidth;
   curEl.style.transform = 'rotateY(-180deg)';
@@ -670,7 +658,7 @@ function goNext() {
 }
 
 /* ------------------------------------------------------------
-   翻上一頁：上一頁從 -180° 翻回 0°（從左側翻回正面）
+   翻上一頁：上一頁從 -180° 翻回 0°
    ------------------------------------------------------------ */
 function goPrev() {
   if (animating) return;
@@ -762,7 +750,6 @@ function startReader(projectName, pages) {
 
     d.appendChild(img);
 
-    // 第 0 頁正面朝上（0 度），其餘都翻到左側（-180 度）
     d.style.zIndex    = (i === 0) ? '2' : '1';
     d.style.transform = (i === 0) ? 'rotateY(0deg)' : 'rotateY(-180deg)';
 
