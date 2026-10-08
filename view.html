@@ -8,10 +8,13 @@
 <title>翻頁相簿</title>
 <style>
   :root {
-    --flip-duration: 620ms;
-    --flip-ease: cubic-bezier(0.36, 0.24, 0.28, 1);
+    --flip-duration: 700ms;
+    --flip-ease: cubic-bezier(0.45, 0.05, 0.35, 1);
     --glass-border: rgba(255, 255, 255, 0.07);
     --text-soft: rgba(255, 255, 255, 0.9);
+    --page-bg: #0d0f14;
+    --paper-back-1: #2a2d35;
+    --paper-back-2: #14171d;
   }
 
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -63,6 +66,7 @@
     line-height: 1.7;
   }
 
+  /* ============ 閱讀器 ============ */
   #reader {
     position: fixed; inset: 0;
     display: flex;
@@ -76,8 +80,8 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: calc(env(safe-area-inset-top) + 10px) 14px 10px;
-    background: rgba(12, 14, 18, 0.92);
+    padding: calc(env(safe-area-inset-top) + 8px) 12px 8px;
+    background: rgba(12, 14, 18, 0.94);
     backdrop-filter: blur(20px) saturate(160%);
     -webkit-backdrop-filter: blur(20px) saturate(160%);
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
@@ -86,7 +90,7 @@
 
   .btn-icon {
     flex: none;
-    width: 40px; height: 40px;
+    width: 38px; height: 38px;
     padding: 0;
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.08);
@@ -114,16 +118,28 @@
     padding: 0 4px;
   }
 
+  /* ==========================================================
+     Stage
+     ========================================================== */
   #stage {
     flex: 1;
     position: relative;
     overflow: hidden;
     min-height: 0;
-    perspective: 1800px;
+    perspective: 2400px;
     perspective-origin: 50% 50%;
     touch-action: none;
     -webkit-user-select: none; user-select: none;
     -webkit-touch-callout: none;
+    /* 書脊：整個舞台左緣固定漸層陰影，營造書本裝訂處的深度感 */
+    background-image:
+      linear-gradient(to right,
+        rgba(0, 0, 0, 0.55) 0%,
+        rgba(0, 0, 0, 0.22) 1.2%,
+        rgba(0, 0, 0, 0.06) 3%,
+        transparent 6%);
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
   }
 
   #stage.is-zoomed {
@@ -132,24 +148,28 @@
   }
 
   /* ==========================================================
-     基礎 .page
-     - 橫屏 / 桌機：圖片「高度」等於容器高度，寬度按比例
-       （若圖片超寬，兩側會被裁切）
+     .page 基本樣式
+     - transform-origin 設在左側（書脊），讓翻頁以書脊為軸
+     - preserve-3d 讓子層與偽元素正確做 3D 疊層
      ========================================================== */
   .page {
     position: absolute; inset: 0;
-    background: #0d0f14;
+    background: var(--page-bg);
     transform-origin: left center;
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
     transition: transform var(--flip-duration) var(--flip-ease);
     will-change: transform;
     pointer-events: none;
     overflow: hidden;
+    transform-style: preserve-3d;
 
     display: flex;
     align-items: center;
     justify-content: center;
+
+    /* 頁面右側邊緣的微陰影，模擬下方紙張堆疊出的厚度 */
+    box-shadow:
+      inset -3px 0 10px -2px rgba(0, 0, 0, 0.45),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.02);
   }
 
   .page img {
@@ -161,15 +181,118 @@
     object-fit: contain;
     -webkit-user-drag: none;
     user-select: none;
+    position: relative;
+    z-index: 1;
+
+    /* 紙張翻過 90 度後，圖片背面自動隱藏 */
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+
+  /* ==========================================================
+     紙張背面
+     當 .page 旋轉超過 -90 度時，img 因 backface-visibility 隱藏，
+     由 ::after 提供「紙張背面」的暗色漸層質感。
+     ::after 自身再 rotateY(180deg) 並配合 backface-visibility，
+     讓它只在「翻過去之後」才顯示。
+     ========================================================== */
+  .page::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(135deg,
+        var(--paper-back-1) 0%,
+        var(--paper-back-2) 100%),
+      radial-gradient(circle at 20% 10%,
+        rgba(255, 255, 255, 0.04), transparent 50%);
+    transform: rotateY(180deg);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ==========================================================
+     動態光影：翻頁過程中的紙張反光與陰影變化
+     .flipping 只在翻頁期間短暫存在（由 JS 加上／移除）
+     ========================================================== */
+  .page::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 3;
+    opacity: 0;
+    background:
+      /* 從書脊（左）往右的固定書脊陰影 */
+      linear-gradient(to right,
+        rgba(0, 0, 0, 0.42) 0%,
+        rgba(0, 0, 0, 0.16) 4%,
+        rgba(0, 0, 0, 0.04) 9%,
+        transparent 16%),
+      /* 從右緣往內的厚度陰影 */
+      linear-gradient(to left,
+        rgba(0, 0, 0, 0.28) 0%,
+        rgba(0, 0, 0, 0.08) 3%,
+        transparent 8%);
+  }
+
+  .page.flipping::before {
+    animation: pageLightAndShade var(--flip-duration) var(--flip-ease) forwards;
+  }
+
+  @keyframes pageLightAndShade {
+    0% {
+      opacity: 1;
+      background:
+        linear-gradient(to right,
+          rgba(0, 0, 0, 0.42) 0%,
+          rgba(0, 0, 0, 0.16) 4%,
+          rgba(0, 0, 0, 0.04) 9%,
+          transparent 16%),
+        linear-gradient(to left,
+          rgba(0, 0, 0, 0.28) 0%,
+          rgba(0, 0, 0, 0.08) 3%,
+          transparent 8%);
+    }
+    45% {
+      opacity: 1;
+      background:
+        linear-gradient(to right,
+          rgba(0, 0, 0, 0.7) 0%,
+          rgba(0, 0, 0, 0.45) 8%,
+          rgba(0, 0, 0, 0.2) 18%,
+          rgba(0, 0, 0, 0.1) 30%,
+          transparent 45%),
+        linear-gradient(to left,
+          rgba(0, 0, 0, 0.35) 0%,
+          transparent 6%);
+    }
+    100% {
+      opacity: 1;
+      background:
+        linear-gradient(to right,
+          rgba(0, 0, 0, 0.42) 0%,
+          rgba(0, 0, 0, 0.16) 4%,
+          rgba(0, 0, 0, 0.04) 9%,
+          transparent 16%),
+        linear-gradient(to left,
+          rgba(0, 0, 0, 0.28) 0%,
+          rgba(0, 0, 0, 0.08) 3%,
+          transparent 8%);
+    }
   }
 
   .page .err {
     color: #6a7285;
     font-size: 14px;
+    position: relative;
+    z-index: 2;
   }
 
   /* ==========================================================
-     手機（豎屏）：寬度鋪滿 + 可上下捲動 + 垂直居中
+     手機（豎屏）：寬度鋪滿、貼齊工具列、可上下捲動
      ========================================================== */
   @media (orientation: portrait) {
     #stage {
@@ -184,7 +307,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: flex-start;
+      justify-content: flex-start;   /* 圖片從頂部開始，貼齊工具列 */
       overflow-y: auto;
       overflow-x: hidden;
       -webkit-overflow-scrolling: touch;
@@ -199,14 +322,12 @@
       max-width: none;
       max-height: none;
       object-fit: fill;
-      margin: auto 0;
+      margin: 0;    /* 貼齊容器頂部，不再留白 */
     }
   }
 
   /* ==========================================================
-     放大模式：改用 block 佈局，讓溢出部分能正常滾動
-     - 圖片高度為容器的 2 倍
-     - margin: auto 讓圖片小於容器時仍居中
+     放大模式
      ========================================================== */
   .page.zoomed {
     display: block;
@@ -241,7 +362,7 @@
   @media (orientation: landscape) {
     .page.zoomed img {
       width: auto;
-      height: 200%;   /* 2 倍 */
+      height: 200%;
     }
   }
 
@@ -357,7 +478,7 @@ const hudPage   = document.getElementById('hudPage');
 const hudTitle  = document.getElementById('hudTitle');
 const hintEl    = document.getElementById('hint');
 
-const FLIP_MS    = 620;
+const FLIP_MS    = 700;
 const DBL_TAP_MS = 260;
 
 /* ---- 圖示 ---- */
@@ -424,7 +545,6 @@ function setZoom(zoomed, originEvent) {
   if (!pageEl) return;
 
   if (zoomed) {
-    // 記錄點擊位置（相對容器左上角）
     let clickRelX = 0, clickRelY = 0, hasClick = false;
     if (originEvent) {
       const rect = pageEl.getBoundingClientRect();
@@ -433,14 +553,12 @@ function setZoom(zoomed, originEvent) {
       hasClick = true;
     }
 
-    // 記下放大前的容器尺寸（用來換算點擊位置比例）
     const beforeW = pageEl.clientWidth;
     const beforeH = pageEl.clientHeight;
 
     pageEl.classList.add('zoomed');
     stageEl.classList.add('is-zoomed');
 
-    // 等瀏覽器完成佈局後再調整滾動位置
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
         const imgEl = pageEl.querySelector('img');
@@ -454,13 +572,11 @@ function setZoom(zoomed, originEvent) {
         let targetX, targetY;
 
         if (hasClick) {
-          // 點擊位置在放大前容器中的比例 → 對應到放大後的圖片座標
           const ratioX = clickRelX / beforeW;
           const ratioY = clickRelY / beforeH;
           targetX = ratioX * newW - viewW / 2;
           targetY = ratioY * newH - viewH / 2;
         } else {
-          // 按鈕觸發 → 圖片中心
           targetX = (newW - viewW) / 2;
           targetY = (newH - viewH) / 2;
         }
@@ -494,11 +610,12 @@ function refreshZIndex() {
   });
 }
 
+/** 立即改變 transform，不觸發 transition */
 function setTransformInstant(el, transform) {
-  el.style.transition = 'none';
-  el.style.transform  = transform;
+  el.classList.add('no-anim');
+  el.style.transform = transform;
   void el.offsetWidth;
-  el.style.transition = '';
+  el.classList.remove('no-anim');
 }
 
 function finishFlip(newCur) {
@@ -521,7 +638,7 @@ function clearZoom() {
 }
 
 /* ------------------------------------------------------------
-   翻頁
+   翻下一頁：當前頁向外掀起（0° → -180°）
    ------------------------------------------------------------ */
 function goNext() {
   if (animating) return;
@@ -533,20 +650,28 @@ function goNext() {
   const curEl  = pageEls[cur];
   const nextEl = pageEls[cur + 1];
 
-  nextEl.scrollTop = 0;
-
+  // 下一頁：先瞬間擺回正面（0 度），墊在底層
   setTransformInstant(nextEl, 'rotateY(0deg)');
   nextEl.style.zIndex = '1';
-  curEl.style.zIndex  = '2';
+  nextEl.scrollTop = 0;
 
+  // 當前頁：移到上層準備翻出
+  curEl.style.zIndex = '2';
+
+  // 加上光影 class，再觸發旋轉
+  curEl.classList.add('flipping');
   void curEl.offsetWidth;
-  curEl.style.transform = 'rotateY(180deg)';
+  curEl.style.transform = 'rotateY(-180deg)';
 
   setTimeout(function () {
+    curEl.classList.remove('flipping');
     finishFlip(cur + 1);
   }, FLIP_MS + 60);
 }
 
+/* ------------------------------------------------------------
+   翻上一頁：上一頁從 -180° 翻回 0°（從左側翻回正面）
+   ------------------------------------------------------------ */
 function goPrev() {
   if (animating) return;
   if (cur <= 0) return;
@@ -558,18 +683,15 @@ function goPrev() {
   const prevEl = pageEls[cur - 1];
 
   prevEl.scrollTop = 0;
-
-  setTransformInstant(prevEl, 'rotateY(180deg)');
   prevEl.style.zIndex = '3';
   curEl.style.zIndex  = '2';
 
+  prevEl.classList.add('flipping');
   void prevEl.offsetWidth;
-
-  requestAnimationFrame(function () {
-    prevEl.style.transform = 'rotateY(0deg)';
-  });
+  prevEl.style.transform = 'rotateY(0deg)';
 
   setTimeout(function () {
+    prevEl.classList.remove('flipping');
     finishFlip(cur - 1);
   }, FLIP_MS + 80);
 }
@@ -581,13 +703,16 @@ function goHome() {
   if (animating) return;
   if (cur === 0 && !pageEls[0]) return;
 
-  pageEls.forEach(function (el) { el.style.transition = 'none'; });
+  pageEls.forEach(function (el) {
+    el.classList.add('no-anim');
+    el.classList.remove('flipped', 'flipping');
+    el.scrollTop  = 0;
+    el.scrollLeft = 0;
+  });
 
   pageEls.forEach(function (el, i) {
     el.classList.remove('zoomed');
-    el.scrollTop  = 0;
-    el.scrollLeft = 0;
-    el.style.transform = (i === 0) ? 'rotateY(0deg)' : 'rotateY(180deg)';
+    el.style.transform = (i === 0) ? 'rotateY(0deg)' : 'rotateY(-180deg)';
     el.style.zIndex    = (i === 0) ? '2' : '1';
   });
 
@@ -596,9 +721,11 @@ function goHome() {
   updateHud();
   updateZoomButton();
 
+  void stageEl.offsetWidth;
+
   requestAnimationFrame(function () {
     requestAnimationFrame(function () {
-      pageEls.forEach(function (el) { el.style.transition = ''; });
+      pageEls.forEach(function (el) { el.classList.remove('no-anim'); });
     });
   });
 }
@@ -634,8 +761,10 @@ function startReader(projectName, pages) {
     });
 
     d.appendChild(img);
+
+    // 第 0 頁正面朝上（0 度），其餘都翻到左側（-180 度）
     d.style.zIndex    = (i === 0) ? '2' : '1';
-    d.style.transform = (i === 0) ? 'rotateY(0deg)' : 'rotateY(180deg)';
+    d.style.transform = (i === 0) ? 'rotateY(0deg)' : 'rotateY(-180deg)';
 
     stageEl.appendChild(d);
     pageEls.push(d);
@@ -680,11 +809,9 @@ stageEl.addEventListener('pointerup', function (e) {
 
   const zoomed = isCurrentZoomed();
 
-  // 放大模式下，只要不是「輕點」，一律放手讓瀏覽器處理（滾動）
   if (zoomed) {
     if (Math.abs(dx) > 14 || Math.abs(dy) > 14 || dt >= 500) return;
   } else {
-    // 未放大：水平滑動翻頁
     if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.2) {
       if (dx < 0) goNext(); else goPrev();
       return;
@@ -692,7 +819,6 @@ stageEl.addEventListener('pointerup', function (e) {
     if (Math.abs(dx) >= 14 || Math.abs(dy) >= 14 || dt >= 500) return;
   }
 
-  // 輕點：判斷單擊 / 雙擊
   const now = Date.now();
 
   if (now - lastTapTime < DBL_TAP_MS) {
@@ -761,16 +887,13 @@ document.addEventListener('mouseup', function () {
 });
 
 /* ------------------------------------------------------------
-   滑鼠滾輪（僅放大狀態）：把滾輪事件導到 .page.zoomed
+   滑鼠滾輪（僅放大狀態）
    ------------------------------------------------------------ */
 window.addEventListener('wheel', function (e) {
   const pageEl = pageEls[cur];
   if (!pageEl || !pageEl.classList.contains('zoomed')) return;
-
-  // 事件已經在 .page.zoomed 內部 → 讓原生滾動處理
   if (pageEl === e.target || pageEl.contains(e.target)) return;
 
-  // 否則由程式導到放大頁面
   pageEl.scrollTop  += e.deltaY;
   pageEl.scrollLeft += e.deltaX;
   e.preventDefault();
