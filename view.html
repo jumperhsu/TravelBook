@@ -15,6 +15,11 @@
     --page-bg: #0d0f14;
     --paper-back-1: #2a2d35;
     --paper-back-2: #14171d;
+
+    /* 高亮按鈕色票 */
+    --hl-blue: #5b8cff;
+    --hl-blue-strong: rgba(91, 140, 255, 0.92);
+    --hl-blue-hover: rgba(91, 140, 255, 1);
   }
 
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -75,13 +80,13 @@
   }
   #reader[hidden] { display: none; }
 
-  /* ---------- 頂部欄（精簡版：高度約為原本一半） ---------- */
+  /* ---------- 頂部欄（基礎：橫屏 / 桌機靜態佔位） ---------- */
   #topbar {
     flex: none;
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: calc(env(safe-area-inset-top) + 4px) 10px 4px;
+    gap: 10px;
+    padding: calc(env(safe-area-inset-top) + 8px) 14px 8px;
     background: rgba(12, 14, 18, 0.94);
     backdrop-filter: blur(20px) saturate(160%);
     -webkit-backdrop-filter: blur(20px) saturate(160%);
@@ -89,41 +94,72 @@
     z-index: 100;
   }
 
+  /* ==========================================================
+     高亮按鈕（兩種模式共用）
+     ========================================================== */
   .btn-icon {
     flex: none;
-    width: 28px;
-    height: 28px;
+    width: 42px;
+    height: 42px;
     padding: 0;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid var(--glass-border);
+    background: var(--hl-blue-strong);
+    border: 1.5px solid rgba(255, 255, 255, 0.55);
     color: #fff;
     display: flex; align-items: center; justify-content: center;
     cursor: pointer;
-    transition: background .15s, transform .1s;
+    box-shadow:
+      0 6px 18px rgba(0, 0, 0, 0.45),
+      0 0 0 1px rgba(91, 140, 255, 0.35),
+      inset 0 1px 0 rgba(255, 255, 255, 0.35);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    transition: background .15s, transform .1s, box-shadow .15s;
   }
-  .btn-icon:active { background: rgba(255,255,255,.18); transform: scale(.94); }
-  .btn-icon.active {
-    background: rgba(91, 140, 255, 0.35);
-    border-color: rgba(91, 140, 255, 0.5);
-    color: #cfe0ff;
+  .btn-icon:hover {
+    background: var(--hl-blue-hover);
+    box-shadow:
+      0 8px 22px rgba(0, 0, 0, 0.5),
+      0 0 16px rgba(91, 140, 255, 0.65),
+      0 0 0 1px rgba(91, 140, 255, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.4);
   }
-  /* 縮放 SVG 圖示，配合較小的按鈕尺寸 */
+  .btn-icon:active {
+    background: var(--hl-blue-hover);
+    transform: scale(0.92);
+  }
   .btn-icon svg {
     display: block;
-    width: 14px;
-    height: 14px;
+    width: 19px;
+    height: 19px;
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.25));
+  }
+
+  /* 放大中：反轉為白色高亮，藍色圖示 */
+  .btn-icon.active {
+    background: rgba(255, 255, 255, 0.96);
+    color: #2a5ce0;
+    border-color: rgba(255, 255, 255, 0.95);
+    box-shadow:
+      0 6px 20px rgba(0, 0, 0, 0.5),
+      0 0 14px rgba(91, 140, 255, 0.65);
+  }
+  .btn-icon.active:hover {
+    background: #ffffff;
+    box-shadow:
+      0 8px 24px rgba(0, 0, 0, 0.55),
+      0 0 20px rgba(91, 140, 255, 0.8);
   }
 
   #hudTitle {
     flex: 1; min-width: 0;
     text-align: center;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 500;
     color: var(--text-soft);
     letter-spacing: .03em;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    padding: 0 2px;
+    padding: 0 4px;
   }
 
   /* ==========================================================
@@ -284,7 +320,7 @@
   }
 
   /* ==========================================================
-     手機（豎屏）：寬度鋪滿、貼齊工具列、可上下捲動
+     手機（豎屏）：工具列浮動 + 圖片從頂部開始 + 可上下捲動
      ========================================================== */
   @media (orientation: portrait) {
     #stage {
@@ -295,6 +331,28 @@
       touch-action: auto;
     }
 
+    /* --- 頂部工具列：浮動，不佔排版空間 --- */
+    #topbar {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      padding: calc(env(safe-area-inset-top) + 12px) 14px 0;
+      background: none;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      border-bottom: none;
+      pointer-events: none;
+      z-index: 150;
+      justify-content: space-between;
+    }
+
+    /* 隱藏標題，只保留兩側按鈕 */
+    #hudTitle { display: none; }
+
+    #topbar .btn-icon {
+      pointer-events: auto;
+    }
+
+    /* --- 圖片：從容器頂部開始，貼齊視口 --- */
     .page {
       display: flex;
       flex-direction: column;
@@ -473,7 +531,7 @@ const hintEl    = document.getElementById('hint');
 const FLIP_MS    = 700;
 const DBL_TAP_MS = 260;
 
-/* ---- 圖示（不含尺寸，尺寸由 CSS 控制） ---- */
+/* ---- 圖示 ---- */
 const SVG_ZOOM_IN =
   '<svg viewBox="0 0 24 24" fill="none" ' +
   'stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">' +
