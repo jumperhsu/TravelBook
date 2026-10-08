@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#07080b">
+<title>翻頁相簿</title>
+<style>
+  :root {
+    --flip-duration: 620ms;
+    --flip-ease: cubic-bezier(0.36, 0.24, 0.28, 1);
+    --glass-border: rgba(255, 255, 255, 0.07);
+    --text-soft: rgba(255, 255, 255, 0.9);
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    margin: 0; height: 100%;
+    background: #07080b; color: #e9ecf3;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC",
+                 "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+    overscroll-behavior: none;
+  }
+  body { overflow: hidden; }
+
+  #loading {
+    position: fixed; inset: 0;
+    z-index: 300;
+    background: #07080b;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 16px;
+    color: #8b93a7; font-size: 14px;
+  }
+  .spinner {
+    width: 32px; height: 32px;
+    border: 3px solid rgba(255,255,255,.1);
+    border-top-color: #5b8cff;
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #loading.hidden { display: none; }
+
+  #errorView {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 12px;
+    padding: 30px;
+    text-align: center;
+    color: #8b93a7;
+  }
+  #errorView[hidden] { display: none; }
+  #errorView .err-icon { font-size: 52px; opacity: .5; }
+  #errorView p { margin: 0; font-size: 15px; line-height: 1.6; }
+  #errorView .err-sub {
+    font-size: 13px;
+    color: #5d6478;
+    max-width: 300px;
+    line-height: 1.7;
+  }
+
+  /* ============ 閱讀器 ============ */
+  #reader {
+    position: fixed; inset: 0;
+    display: flex;
+    flex-direction: column;
+    background: #07080b;
+  }
+  #reader[hidden] { display: none; }
+
+  /* ---------- 頂部固定欄 ---------- */
+  #topbar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: calc(env(safe-area-inset-top) + 10px) 14px 10px;
+    background: rgba(12, 14, 18, 0.92);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    z-index: 100;
+  }
+
+  .btn-icon {
+    flex: none;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--glass-border);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background .15s, transform .1s;
+  }
+  .btn-icon:active {
+    background: rgba(255, 255, 255, 0.18);
+    transform: scale(0.94);
+  }
+  .btn-icon.active {
+    background: rgba(91, 140, 255, 0.35);
+    border-color: rgba(91, 140, 255, 0.5);
+    color: #cfe0ff;
+  }
+  .btn-icon svg { display: block; }
+
+  #hudTitle {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-soft);
+    letter-spacing: .03em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 0 4px;
+  }
+
+  /* ---------- Stage ---------- */
+  #stage {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    perspective: 1800px;
+    perspective-origin: 50% 50%;
+    touch-action: none;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  /* ==========================================================
+     頁面基本樣式
+     ========================================================== */
+  .page {
+    position: absolute; inset: 0;
+    background: #0d0f14;
+    transform-origin: left center;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    transition: transform var(--flip-duration) var(--flip-ease);
+    will-change: transform;
+    pointer-events: none;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .page img {
+    width: auto;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    display: block;
+    -webkit-user-drag: none; user-select: none;
+  }
+
+  .page .err {
+    color: #6a7285;
+    font-size: 14px;
+  }
+
+  /* ==========================================================
+     手機（豎屏）
+     ========================================================== */
+  @media (orientation: portrait) {
+    #stage {
+      perspective: none;
+      touch-action: pan-y;
+    }
+
+    /* 垂直排列、可捲動、圖片用 margin:auto 自動上下居中 */
+    .page {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-y;
+      overscroll-behavior: contain;
+    }
+
+    .page img {
+      flex: 0 0 auto;
+      width: 100%;
+      height: auto;
+      max-width: none;
+      max-height: none;
+      object-fit: fill;
+      display: block;
+      /* 關鍵：margin:auto 讓圖片上下居中；當圖片大於容器時，
+         margin 自動塌縮為 0，圖片從頂部開始，可正常捲動 */
+      margin: auto;
+    }
+
+    /* 放大模式：寬度 220%，可水平與垂直捲動 */
+    .page.zoomed {
+      display: flex;
+      flex-direction: column;
+      overflow: auto;
+      touch-action: pan-x pan-y;
+    }
+
+    .page.zoomed img {
+      flex: 0 0 auto;
+      width: 220%;
+      height: auto;
+      max-width: none;
+      max-height: none;
+      margin: auto;
+    }
+  }
+
+  /* ==========================================================
+     桌機 / 橫屏
+     ========================================================== */
+  @media (orientation: landscape) {
+    .page.zoomed {
+      overflow: auto;
+      touch-action: pan-x pan-y;
+      /* 保持 flex row，讓 margin:auto 生效 */
+    }
+
+    .page.zoomed img {
+      flex: 0 0 auto;
+      width: auto;
+      height: 200%;
+      max-width: none;
+      max-height: none;
+      /* 關鍵：讓圖片在放大時仍維持置中；
+         大於容器時 margin 塌縮為 0，從左上開始，可捲動 */
+      margin: auto;
+    }
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .page.zoomed { cursor: grab; }
+    .page.zoomed.dragging { cursor: grabbing; }
+  }
+
+  /* ---------- 底部頁碼 ---------- */
+  #hudPage {
+    position: absolute;
+    left: 50%;
+    bottom: calc(22px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    height: 36px;
+    padding: 0 18px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(18px) saturate(160%);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: .08em;
+    font-variant-numeric: tabular-nums;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+    z-index: 205;
+  }
+
+  #hint {
+    position: absolute;
+    left: 50%;
+    bottom: calc(72px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    padding: 9px 18px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 12px;
+    letter-spacing: .04em;
+    pointer-events: none;
+    z-index: 205;
+    opacity: 1;
+    transition: opacity .6s, transform .6s;
+    white-space: nowrap;
+  }
+  #hint.fade {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px);
+  }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <div>正在載入專案…</div>
+</div>
+
+<div id="errorView" hidden>
+  <div class="err-icon">😕</div>
+  <p id="errMsg">找不到這個專案</p>
+  <p class="err-sub">請確認連結是否正確，或聯絡分享此連結的人。</p>
+</div>
+
+<div id="reader" hidden>
+  <div id="topbar">
+    <button id="btnHome" class="btn-icon" aria-label="回到第一頁">
+      <svg width="18" height="18" viewBox="0 0 24 24"
+           fill="none" stroke="currentColor" stroke-width="2.2"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 10.5L12 3l9 7.5"/>
+        <path d="M5 9.8V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.8"/>
+      </svg>
+    </button>
+    <div id="hudTitle"></div>
+    <button id="btnZoom" class="btn-icon" aria-label="放大"></button>
+  </div>
+
+  <div id="stage"></div>
+
+  <div id="hudPage">1 / 1</div>
+  <div id="hint">點左側上一頁 · 點右側下一頁 · 雙擊或按 🔍 放大</div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import {
+  getDatabase, ref, get
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAOdduuzIRGsF03F41fNSeyMWbav0fxFD8",
+  authDomain: "travelbook-a90ed.firebaseapp.com",
+  databaseURL: "https://travelbook-a90ed-default-rtdb.firebaseio.com",
+  projectId: "travelbook-a90ed",
+  storageBucket: "travelbook-a90ed.firebasestorage.app",
+  messagingSenderId: "318594004244",
+  appId: "1:318594004244:web:749b0385b64a103fe07e01"
+};
+
+const app = initializeApp(firebaseConfig);
+const db  = getDatabase(app);
+
+const loadingEl = document.getElementById('loading');
+const errorView = document.getElementById('errorView');
+const errMsgEl  = document.getElementById('errMsg');
+const readerEl  = document.getElementById('reader');
+const stageEl   = document.getElementById('stage');
+const btnHome   = document.getElementById('btnHome');
+const btnZoom   = document.getElementById('btnZoom');
+const hudPage   = document.getElementById('hudPage');
+const hudTitle  = document.getElementById('hudTitle');
+const hintEl    = document.getElementById('hint');
+
+const FLIP_MS    = 620;
+const DBL_TAP_MS = 260;
+
+/* ---- 圖示 ---- */
+const SVG_ZOOM_IN =
+  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" ' +
+  'stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<circle cx="11" cy="11" r="7"/>' +
+  '<path d="M21 21l-4.3-4.3"/>' +
+  '<line x1="11" y1="8" x2="11" y2="14"/>' +
+  '<line x1="8" y1="11" x2="14" y2="11"/>' +
+  '</svg>';
+
+const SVG_ZOOM_OUT =
+  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" ' +
+  'stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<circle cx="11" cy="11" r="7"/>' +
+  '<path d="M21 21l-4.3-4.3"/>' +
+  '<line x1="8" y1="11" x2="14" y2="11"/>' +
+  '</svg>';
+
+let pageEls   = [];
+let cur       = 0;
+let animating = false;
+
+function pageKeySort(a, b) {
+  const na = parseInt(String(a).replace(/\D/g, ''), 10) || 0;
+  const nb = parseInt(String(b).replace(/\D/g, ''), 10) || 0;
+  return na - nb;
+}
+
+function showError(msg) {
+  loadingEl.classList.add('hidden');
+  errMsgEl.textContent = msg;
+  errorView.hidden = false;
+}
+
+function updateHud() {
+  hudPage.textContent = (cur + 1) + ' / ' + pageEls.length;
+}
+
+/* ------------------------------------------------------------
+   放大狀態
+   ------------------------------------------------------------ */
+function isCurrentZoomed() {
+  const el = pageEls[cur];
+  return !!(el && el.classList.contains('zoomed'));
+}
+
+function updateZoomButton() {
+  const zoomed = isCurrentZoomed();
+  if (zoomed) {
+    btnZoom.innerHTML = SVG_ZOOM_OUT;
+    btnZoom.setAttribute('aria-label', '縮小');
+    btnZoom.classList.add('active');
+  } else {
+    btnZoom.innerHTML = SVG_ZOOM_IN;
+    btnZoom.setAttribute('aria-label', '放大');
+    btnZoom.classList.remove('active');
+  }
+}
+
+function setZoom(zoomed, originEvent) {
+  const pageEl = pageEls[cur];
+  if (!pageEl) return;
+
+  if (zoomed) {
+    pageEl.classList.add('zoomed');
+
+    // 等瀏覽器完成佈局後，把「點擊位置」或「圖片中心」捲到中央
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        const imgEl = pageEl.querySelector('img');
+        if (!imgEl) return;
+
+        const newW = imgEl.offsetWidth;
+        const newH = imgEl.offsetHeight;
+
+        // 目標捲動位置：把目標點放在容器中央
+        let targetX, targetY;
+
+        if (originEvent) {
+          // 用雙擊位置
+          const rect = pageEl.getBoundingClientRect();
+          const clickX = originEvent.clientX - rect.left;
+          const clickY = originEvent.clientY - rect.top;
+
+          // 計算點擊位置在原始（未放大）圖片中的座標比例
+          const scaleX = newW / rect.width;
+          const scaleY = newH / rect.height;
+
+          targetX = clickX * scaleX - pageEl.clientWidth  / 2;
+          targetY = clickY * scaleY - pageEl.clientHeight / 2;
+        } else {
+          // 圖片中心
+          targetX = (newW - pageEl.clientWidth)  / 2;
+          targetY = (newH - pageEl.clientHeight) / 2;
+        }
+
+        pageEl.scrollLeft = Math.max(0, Math.min(targetX, newW - pageEl.clientWidth));
+        pageEl.scrollTop  = Math.max(0, Math.min(targetY, newH - pageEl.clientHeight));
+      });
+    });
+  } else {
+    pageEl.classList.remove('zoomed');
+    pageEl.scrollTop  = 0;
+    pageEl.scrollLeft = 0;
+  }
+
+  updateZoomButton();
+}
+
+btnZoom.addEventListener('click', function () {
+  setZoom(!isCurrentZoomed(), null);
+});
+
+/* ------------------------------------------------------------
+   z-index / transform 工具
+   ------------------------------------------------------------ */
+function refreshZIndex() {
+  pageEls.forEach(function (el, i) {
+    el.style.zIndex = (i === cur) ? '2' : '1';
+  });
+}
+
+function setTransformInstant(el, transform) {
+  el.style.transition = 'none';
+  el.style.transform  = transform;
+  void el.offsetWidth;
+  el.style.transition = '';
+}
+
+function finishFlip(newCur) {
+  cur = newCur;
+  updateHud();
+  refreshZIndex();
+  animating = false;
+  updateZoomButton();
+}
+
+function clearZoom() {
+  pageEls.forEach(function (el) {
+    if (el.classList.contains('zoomed')) {
+      el.classList.remove('zoomed');
+      el.scrollTop  = 0;
+      el.scrollLeft = 0;
+    }
+  });
+}
+
+/* ------------------------------------------------------------
+   翻頁
+   ------------------------------------------------------------ */
+function goNext() {
+  if (animating) return;
+  if (cur >= pageEls.length - 1) return;
+
+  clearZoom();
+  animating = true;
+
+  const curEl  = pageEls[cur];
+  const nextEl = pageEls[cur + 1];
+
+  nextEl.scrollTop = 0;
+
+  setTransformInstant(nextEl, 'rotateY(0deg)');
+  nextEl.style.zIndex = '1';
+  curEl.style.zIndex  = '2';
+
+  void curEl.offsetWidth;
+  curEl.style.transform = 'rotateY(180deg)';
+
+  setTimeout(function () {
+    finishFlip(cur + 1);
+  }, FLIP_MS + 60);
+}
+
+function goPrev() {
+  if (animating) return;
+  if (cur <= 0) return;
+
+  clearZoom();
+  animating = true;
+
+  const curEl  = pageEls[cur];
+  const prevEl = pageEls[cur - 1];
+
+  prevEl.scrollTop = 0;
+
+  setTransformInstant(prevEl, 'rotateY(180deg)');
+  prevEl.style.zIndex = '3';
+  curEl.style.zIndex  = '2';
+
+  void prevEl.offsetWidth;
+
+  requestAnimationFrame(function () {
+    prevEl.style.transform = 'rotateY(0deg)';
+  });
+
+  setTimeout(function () {
+    finishFlip(cur - 1);
+  }, FLIP_MS + 80);
+}
+
+/* ------------------------------------------------------------
+   Home
+   ------------------------------------------------------------ */
+function goHome() {
+  if (animating) return;
+  if (cur === 0 && !pageEls[0]) return;
+
+  pageEls.forEach(function (el) { el.style.transition = 'none'; });
+
+  pageEls.forEach(function (el, i) {
+    el.classList.remove('zoomed');
+    el.scrollTop  = 0;
+    el.scrollLeft = 0;
+    el.style.transform = (i === 0) ? 'rotateY(0deg)' : 'rotateY(180deg)';
+    el.style.zIndex    = (i === 0) ? '2' : '1';
+  });
+
+  cur = 0;
+  updateHud();
+  updateZoomButton();
+
+  requestAnimationFrame(function () {
+    requestAnimationFrame(function () {
+      pageEls.forEach(function (el) { el.style.transition = ''; });
+    });
+  });
+}
+
+btnHome.addEventListener('click', goHome);
+
+/* ------------------------------------------------------------
+   初始化
+   ------------------------------------------------------------ */
+function startReader(projectName, pages) {
+  hudTitle.textContent = projectName;
+
+  stageEl.innerHTML = '';
+  pageEls = [];
+  cur = 0;
+  animating = false;
+
+  pages.forEach(function (p, i) {
+    const d = document.createElement('div');
+    d.className = 'page';
+
+    const img = document.createElement('img');
+    img.alt = '';
+    img.draggable = false;
+    img.src = p.src;
+
+    img.addEventListener('error', function () {
+      img.remove();
+      const msg = document.createElement('div');
+      msg.className = 'err';
+      msg.textContent = '圖片載入失敗';
+      d.appendChild(msg);
+    });
+
+    d.appendChild(img);
+    d.style.zIndex    = (i === 0) ? '2' : '1';
+    d.style.transform = (i === 0) ? 'rotateY(0deg)' : 'rotateY(180deg)';
+
+    stageEl.appendChild(d);
+    pageEls.push(d);
+  });
+
+  pages.forEach(function (p) {
+    const im = new Image();
+    im.src = p.src;
+  });
+
+  updateHud();
+  updateZoomButton();
+  loadingEl.classList.add('hidden');
+  readerEl.hidden = false;
+
+  setTimeout(function () { hintEl.classList.add('fade'); }, 3500);
+}
+
+/* ------------------------------------------------------------
+   手勢 / 點擊 / 雙擊
+   ------------------------------------------------------------ */
+let pStartX = 0, pStartY = 0, pStartTime = 0, pTracking = false;
+let lastTapTime = 0;
+let tapTimer    = null;
+
+stageEl.addEventListener('pointerdown', function (e) {
+  if (animating) return;
+  pTracking  = true;
+  pStartX    = e.clientX;
+  pStartY    = e.clientY;
+  pStartTime = Date.now();
+});
+
+stageEl.addEventListener('pointerup', function (e) {
+  if (!pTracking) return;
+  pTracking = false;
+  if (animating) return;
+
+  const dx = e.clientX - pStartX;
+  const dy = e.clientY - pStartY;
+  const dt = Date.now() - pStartTime;
+
+  const zoomed = isCurrentZoomed();
+
+  // 放大模式下有明顯移動 → 拖拽，不翻頁
+  if (zoomed && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) return;
+
+  // 普通模式：水平滑動翻頁
+  if (!zoomed && Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+    if (dx < 0) goNext(); else goPrev();
+    return;
+  }
+
+  // 輕點
+  if (Math.abs(dx) < 14 && Math.abs(dy) < 14 && dt < 500) {
+    const now = Date.now();
+
+    if (now - lastTapTime < DBL_TAP_MS) {
+      clearTimeout(tapTimer);
+      tapTimer = null;
+      lastTapTime = 0;
+      setZoom(!isCurrentZoomed(), e);
+      return;
+    }
+
+    lastTapTime = now;
+    const tapX = e.clientX;
+
+    tapTimer = setTimeout(function () {
+      tapTimer = null;
+      lastTapTime = 0;
+
+      if (isCurrentZoomed()) return;
+
+      if (tapX < window.innerWidth / 2) {
+        goPrev();
+      } else {
+        goNext();
+      }
+    }, DBL_TAP_MS);
+  }
+});
+
+stageEl.addEventListener('pointercancel', function () {
+  pTracking = false;
+});
+
+/* ------------------------------------------------------------
+   桌機滑鼠拖拽（僅放大狀態）
+   ------------------------------------------------------------ */
+let mouseDrag = null;
+
+stageEl.addEventListener('mousedown', function (e) {
+  const pageEl = pageEls[cur];
+  if (!pageEl || !pageEl.classList.contains('zoomed')) return;
+  if (e.button !== 0) return;
+
+  mouseDrag = {
+    x: e.clientX,
+    y: e.clientY,
+    scrollLeft: pageEl.scrollLeft,
+    scrollTop:  pageEl.scrollTop
+  };
+  pageEl.classList.add('dragging');
+  e.preventDefault();
+});
+
+document.addEventListener('mousemove', function (e) {
+  if (!mouseDrag) return;
+  const pageEl = pageEls[cur];
+  if (!pageEl) return;
+
+  pageEl.scrollLeft = mouseDrag.scrollLeft - (e.clientX - mouseDrag.x);
+  pageEl.scrollTop  = mouseDrag.scrollTop  - (e.clientY - mouseDrag.y);
+});
+
+document.addEventListener('mouseup', function () {
+  if (!mouseDrag) return;
+  mouseDrag = null;
+  const pageEl = pageEls[cur];
+  if (pageEl) pageEl.classList.remove('dragging');
+});
+
+/* ------------------------------------------------------------
+   鍵盤
+   ------------------------------------------------------------ */
+document.addEventListener('keydown', function (e) {
+  if (readerEl.hidden) return;
+
+  switch (e.key) {
+    case 'ArrowRight':
+    case 'ArrowDown':
+    case 'PageDown':
+    case ' ':
+      e.preventDefault();
+      if (!isCurrentZoomed()) goNext();
+      break;
+    case 'ArrowLeft':
+    case 'ArrowUp':
+    case 'PageUp':
+      e.preventDefault();
+      if (!isCurrentZoomed()) goPrev();
+      break;
+    case 'Home':
+      e.preventDefault();
+      goHome();
+      break;
+    case 'z':
+    case 'Z':
+      e.preventDefault();
+      setZoom(!isCurrentZoomed(), null);
+      break;
+    case 'Escape':
+      e.preventDefault();
+      if (isCurrentZoomed()) {
+        setZoom(false, null);
+      } else {
+        goHome();
+      }
+      break;
+  }
+});
+
+/* ------------------------------------------------------------
+   啟動
+   ------------------------------------------------------------ */
+(function init() {
+  const params = new URLSearchParams(location.search);
+  const projectId = params.get('project');
+
+  if (!projectId) {
+    showError('未指定專案。');
+    return;
+  }
+
+  get(ref(db, 'projects/' + projectId))
+    .then(function (snap) {
+      const data = snap.val();
+
+      if (!data) {
+        showError('找不到這個專案，可能已被刪除。');
+        return;
+      }
+
+      const pages = [];
+      if (data.pages && typeof data.pages === 'object') {
+        Object.keys(data.pages).sort(pageKeySort).forEach(function (k) {
+          const p = data.pages[k];
+          if (p && typeof p === 'object' && p.src) {
+            pages.push({
+              id: p.id || k,
+              src: p.src,
+              name: p.name || ''
+            });
+          }
+        });
+      }
+
+      if (pages.length === 0) {
+        showError('這個專案還沒有任何頁面。');
+        return;
+      }
+
+      startReader(data.name || '相簿', pages);
+    })
+    .catch(function (err) {
+      console.error(err);
+      showError('載入失敗：' + err.message);
+    });
+})();
+</script>
+</body>
+</html>
