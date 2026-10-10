@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#07080b">
+<title>翻頁相簿</title>
+<style>
+  :root {
+    --flip-duration: 700ms;
+    --flip-ease: cubic-bezier(0.45, 0.05, 0.35, 1);
+    --glass-border: rgba(255, 255, 255, 0.07);
+    --text-soft: rgba(255, 255, 255, 0.9);
+    --page-bg: #0d0f14;
+    --paper-back-1: #2a2d35;
+    --paper-back-2: #14171d;
+
+    /* 螺旋圈色票 */
+    --coil-light: #e8ecf3;
+    --coil-mid:   #b8c0d0;
+    --coil-dark:  #6e7688;
+    --coil-shadow: rgba(0, 0, 0, 0.55);
+
+    /* 高亮按鈕色票 */
+    --hl-blue: #5b8cff;
+    --hl-blue-strong: rgba(91, 140, 255, 0.92);
+    --hl-blue-hover: rgba(91, 140, 255, 1);
+
+    /* 螺旋圈尺寸 */
+    --coil-width: 34px;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    margin: 0; height: 100%;
+    background: #07080b; color: #e9ecf3;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC",
+                 "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+    overscroll-behavior: none;
+  }
+  body { overflow: hidden; }
+
+  #loading {
+    position: fixed; inset: 0;
+    z-index: 300;
+    background: #07080b;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 16px;
+    color: #8b93a7; font-size: 14px;
+  }
+  .spinner {
+    width: 32px; height: 32px;
+    border: 3px solid rgba(255,255,255,.1);
+    border-top-color: #5b8cff;
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #loading.hidden { display: none; }
+
+  #errorView {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 12px;
+    padding: 30px;
+    text-align: center;
+    color: #8b93a7;
+  }
+  #errorView[hidden] { display: none; }
+  #errorView .err-icon { font-size: 52px; opacity: .5; }
+  #errorView p { margin: 0; font-size: 15px; line-height: 1.6; }
+  #errorView .err-sub {
+    font-size: 13px;
+    color: #5d6478;
+    max-width: 300px;
+    line-height: 1.7;
+  }
+
+  #reader {
+    position: fixed; inset: 0;
+    display: flex;
+    flex-direction: column;
+    background: #07080b;
+  }
+  #reader[hidden] { display: none; }
+
+  #topbar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: calc(env(safe-area-inset-top) + 8px) 14px 8px;
+    background: rgba(12, 14, 18, 0.94);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    z-index: 100;
+  }
+
+  .btn-icon {
+    flex: none;
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    border-radius: 50%;
+    background: var(--hl-blue-strong);
+    border: 1.5px solid rgba(255, 255, 255, 0.55);
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    box-shadow:
+      0 6px 18px rgba(0, 0, 0, 0.45),
+      0 0 0 1px rgba(91, 140, 255, 0.35),
+      inset 0 1px 0 rgba(255, 255, 255, 0.35);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    transition: background .15s, transform .1s, box-shadow .15s;
+  }
+  .btn-icon:hover {
+    background: var(--hl-blue-hover);
+    box-shadow:
+      0 8px 22px rgba(0, 0, 0, 0.5),
+      0 0 16px rgba(91, 140, 255, 0.65),
+      0 0 0 1px rgba(91, 140, 255, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  }
+  .btn-icon:active {
+    background: var(--hl-blue-hover);
+    transform: scale(0.92);
+  }
+  .btn-icon svg {
+    display: block;
+    width: 19px;
+    height: 19px;
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.25));
+  }
+
+  .btn-icon.active {
+    background: rgba(255, 255, 255, 0.96);
+    color: #2a5ce0;
+    border-color: rgba(255, 255, 255, 0.95);
+    box-shadow:
+      0 6px 20px rgba(0, 0, 0, 0.5),
+      0 0 14px rgba(91, 140, 255, 0.65);
+  }
+  .btn-icon.active:hover {
+    background: #ffffff;
+    box-shadow:
+      0 8px 24px rgba(0, 0, 0, 0.55),
+      0 0 20px rgba(91, 140, 255, 0.8);
+  }
+
+  #hudTitle {
+    flex: 1; min-width: 0;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-soft);
+    letter-spacing: .03em;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    padding: 0 4px;
+  }
+
+  #stage {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    min-height: 0;
+    perspective: 2400px;
+    perspective-origin: 50% 50%;
+    touch-action: none;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  #stage.is-zoomed {
+    touch-action: auto;
+    perspective: none;
+  }
+
+  .page {
+    position: absolute; inset: 0;
+    background: var(--page-bg);
+    transform-origin: left center;
+    transition: transform var(--flip-duration) var(--flip-ease);
+    will-change: transform;
+    pointer-events: none;
+    overflow: hidden;
+    transform-style: preserve-3d;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    box-shadow:
+      inset -3px 0 10px -2px rgba(0, 0, 0, 0.45),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+  }
+
+  .page.no-anim { transition: none !important; }
+
+  .page img {
+    display: block;
+    width: auto;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+    object-fit: contain;
+    -webkit-user-drag: none;
+    user-select: none;
+    position: relative;
+    z-index: 1;
+
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+
+  .page::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(135deg,
+        var(--paper-back-1) 0%,
+        var(--paper-back-2) 100%),
+      radial-gradient(circle at 20% 10%,
+        rgba(255, 255, 255, 0.04), transparent 50%);
+    transform: rotateY(180deg);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ==========================================================
+     螺旋裝訂圈
+     ========================================================== */
+  .page::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: var(--coil-width);
+    pointer-events: none;
+    z-index: 5;
+
+    background-image:
+      linear-gradient(to right,
+        var(--coil-light) 0%,
+        var(--coil-mid) 35%,
+        var(--coil-dark) 60%,
+        var(--coil-mid) 85%,
+        var(--coil-light) 100%);
+
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+
+    -webkit-mask-image:
+      repeating-radial-gradient(
+        circle at 50% 0,
+        transparent 0,
+        transparent 8px,
+        #000 8px,
+        #000 11px,
+        transparent 11px
+      );
+    -webkit-mask-size: 100% 22px;
+    -webkit-mask-repeat: repeat-y;
+    mask-image:
+      repeating-radial-gradient(
+        circle at 50% 0,
+        transparent 0,
+        transparent 8px,
+        #000 8px,
+        #000 11px,
+        transparent 11px
+      );
+    mask-size: 100% 22px;
+    mask-repeat: repeat-y;
+
+    filter:
+      drop-shadow(1px 1px 1px var(--coil-shadow))
+      drop-shadow(0 0 1px rgba(0, 0, 0, 0.5));
+  }
+
+  .page .coil-overlay {
+    position: absolute;
+    top: 0; bottom: 0; left: 0;
+    width: var(--coil-width);
+    pointer-events: none;
+    z-index: 6;
+    background:
+      linear-gradient(to right,
+        rgba(0, 0, 0, 0.35) 0%,
+        rgba(0, 0, 0, 0.12) 40%,
+        transparent 100%);
+  }
+
+  .page .err {
+    color: #6a7285;
+    font-size: 14px;
+    position: relative;
+    z-index: 2;
+  }
+
+  @media (orientation: portrait) {
+    #stage {
+      perspective: none;
+      touch-action: pan-y;
+    }
+    #stage.is-zoomed {
+      touch-action: auto;
+    }
+
+    #topbar {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      padding: calc(env(safe-area-inset-top) + 12px) 14px 0;
+      background: none;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      border-bottom: none;
+      pointer-events: none;
+      z-index: 150;
+      justify-content: space-between;
+    }
+
+    #hudTitle { display: none; }
+    #topbar .btn-icon { pointer-events: auto; }
+
+    .page {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-y;
+      overscroll-behavior: contain;
+    }
+
+    .page img {
+      flex: 0 0 auto;
+      width: 100%;
+      height: auto;
+      max-width: none;
+      max-height: none;
+      object-fit: fill;
+      margin: 0;
+      padding-left: var(--coil-width);
+      box-sizing: border-box;
+    }
+
+    .page::before,
+    .page .coil-overlay {
+      width: calc(var(--coil-width) * 0.85);
+    }
+    .page img {
+      padding-left: calc(var(--coil-width) * 0.85);
+    }
+  }
+
+  .page.zoomed {
+    display: block;
+    overflow: auto;
+    touch-action: pan-x pan-y;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    pointer-events: auto;
+    cursor: grab;
+  }
+  .page.zoomed.dragging { cursor: grabbing; }
+  .page.zoomed:active { cursor: grabbing; }
+
+  .page.zoomed img {
+    display: block;
+    flex: none;
+    margin: auto;
+    max-width: none;
+    max-height: none;
+    object-fit: contain;
+    -webkit-user-drag: none;
+    pointer-events: none;
+    padding-left: 0;
+  }
+
+  @media (orientation: portrait) {
+    .page.zoomed img {
+      width: 220%;
+      height: auto;
+    }
+  }
+
+  @media (orientation: landscape) {
+    .page.zoomed img {
+      width: auto;
+      height: 200%;
+    }
+  }
+
+  #hudPage {
+    position: absolute;
+    left: 50%;
+    bottom: calc(22px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    height: 36px;
+    padding: 0 18px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(18px) saturate(160%);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #fff;
+    font-size: 13px; font-weight: 600;
+    letter-spacing: .08em;
+    font-variant-numeric: tabular-nums;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+    z-index: 205;
+  }
+
+  #hint {
+    position: absolute;
+    left: 50%;
+    bottom: calc(72px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    padding: 9px 18px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 12px;
+    letter-spacing: .04em;
+    pointer-events: none;
+    z-index: 205;
+    opacity: 1;
+    transition: opacity .6s, transform .6s;
+    white-space: nowrap;
+  }
+  #hint.fade {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px);
+  }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <div>正在載入專案…</div>
+</div>
+
+<div id="errorView" hidden>
+  <div class="err-icon">😕</div>
+  <p id="errMsg">找不到這個專案</p>
+  <p class="err-sub">請確認連結是否正確，或聯絡分享此連結的人。</p>
+</div>
+
+<div id="reader" hidden>
+  <div id="topbar">
+    <button id="btnHome" class="btn-icon" aria-label="回到第一頁">
+      <svg viewBox="0 0 24 24"
+           fill="none" stroke="currentColor" stroke-width="2.4"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 10.5L12 3l9 7.5"/>
+        <path d="M5 9.8V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.8"/>
+      </svg>
+    </button>
+    <div id="hudTitle"></div>
+    <button id="btnZoom" class="btn-icon" aria-label="放大"></button>
+  </div>
+
+  <div id="stage"></div>
+
+  <div id="hudPage">1 / 1</div>
+  <div id="hint">點左側上一頁 · 點右側下一頁 · 雙擊或按 🔍 放大</div>
+</div>
+
+<!-- ============================================================
+     Firebase compat SDK（非模組化版本，可在 file:// 環境使用）
+     ============================================================ -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ============================================================
+     Firebase 設定與初始化
+     ============================================================ */
+  var firebaseConfig = {
+    apiKey: "AIzaSyAOdduuzIRGsF03F41fNSeyMWbav0fxFD8",
+    authDomain: "travelbook-a90ed.firebaseapp.com",
+    databaseURL: "https://travelbook-a90ed-default-rtdb.firebaseio.com",
+    projectId: "travelbook-a90ed",
+    storageBucket: "travelbook-a90ed.firebasestorage.app",
+    messagingSenderId: "318594004244",
+    appId: "1:318594004244:web:749b0385b64a103fe07e01"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  var db = firebase.database();
+
+  /* ============================================================
+     元素
+     ============================================================ */
+  var loadingEl = document.getElementById('loading');
+  var errorView = document.getElementById('errorView');
+  var errMsgEl  = document.getElementById('errMsg');
+  var readerEl  = document.getElementById('reader');
+  var stageEl   = document.getElementById('stage');
+  var btnHome   = document.getElementById('btnHome');
+  var btnZoom   = document.getElementById('btnZoom');
+  var hudPage   = document.getElementById('hudPage');
+  var hudTitle  = document.getElementById('hudTitle');
+  var hintEl    = document.getElementById('hint');
+
+  var FLIP_MS    = 700;
+  var DBL_TAP_MS = 260;
+
+  /* ============================================================
+     圖示
+     ============================================================ */
+  var SVG_ZOOM_IN =
+    '<svg viewBox="0 0 24 24" fill="none" ' +
+    'stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">' +
+    '<circle cx="11" cy="11" r="7"/>' +
+    '<path d="M21 21l-4.3-4.3"/>' +
+    '<line x1="11" y1="8" x2="11" y2="14"/>' +
+    '<line x1="8" y1="11" x2="14" y2="11"/>' +
+    '</svg>';
+
+  var SVG_ZOOM_OUT =
+    '<svg viewBox="0 0 24 24" fill="none" ' +
+    'stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">' +
+    '<circle cx="11" cy="11" r="7"/>' +
+    '<path d="M21 21l-4.3-4.3"/>' +
+    '<line x1="8" y1="11" x2="14" y2="11"/>' +
+    '</svg>';
+
+  /* ============================================================
+     狀態
+     ============================================================ */
+  var pageEls   = [];
+  var cur       = 0;
+  var animating = false;
+
+  /* ============================================================
+     工具
+     ============================================================ */
+  function pageKeySort(a, b) {
+    var na = parseInt(String(a).replace(/\D/g, ''), 10) || 0;
+    var nb = parseInt(String(b).replace(/\D/g, ''), 10) || 0;
+    return na - nb;
+  }
+
+  function showError(msg) {
+    loadingEl.classList.add('hidden');
+    errMsgEl.textContent = msg;
+    errorView.hidden = false;
+  }
+
+  function updateHud() {
+    hudPage.textContent = (cur + 1) + ' / ' + pageEls.length;
+  }
+
+  /* ============================================================
+     放大狀態
+     ============================================================ */
+  function isCurrentZoomed() {
+    var el = pageEls[cur];
+    return !!(el && el.classList.contains('zoomed'));
+  }
+
+  function updateZoomButton() {
+    var zoomed = isCurrentZoomed();
+    if (zoomed) {
+      btnZoom.innerHTML = SVG_ZOOM_OUT;
+      btnZoom.setAttribute('aria-label', '縮小');
+      btnZoom.classList.add('active');
+    } else {
+      btnZoom.innerHTML = SVG_ZOOM_IN;
+      btnZoom.setAttribute('aria-label', '放大');
+      btnZoom.classList.remove('active');
+    }
+  }
+
+  function setZoom(zoomed, originEvent) {
+    var pageEl = pageEls[cur];
+    if (!pageEl) return;
+
+    if (zoomed) {
+      var clickRelX = 0, clickRelY = 0, hasClick = false;
+      if (originEvent) {
+        var rect = pageEl.getBoundingClientRect();
+        clickRelX = originEvent.clientX - rect.left;
+        clickRelY = originEvent.clientY - rect.top;
+        hasClick = true;
+      }
+
+      var beforeW = pageEl.clientWidth;
+      var beforeH = pageEl.clientHeight;
+
+      pageEl.classList.add('zoomed');
+      stageEl.classList.add('is-zoomed');
+
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          var imgEl = pageEl.querySelector('img');
+          if (!imgEl) return;
+
+          var newW = imgEl.offsetWidth;
+          var newH = imgEl.offsetHeight;
+          var viewW = pageEl.clientWidth;
+          var viewH = pageEl.clientHeight;
+
+          var targetX, targetY;
+
+          if (hasClick) {
+            var ratioX = clickRelX / beforeW;
+            var ratioY = clickRelY / beforeH;
+            targetX = ratioX * newW - viewW / 2;
+            targetY = ratioY * newH - viewH / 2;
+          } else {
+            targetX = (newW - viewW) / 2;
+            targetY = (newH - viewH) / 2;
+          }
+
+          var maxX = Math.max(0, newW - viewW);
+          var maxY = Math.max(0, newH - viewH);
+          pageEl.scrollLeft = Math.max(0, Math.min(targetX, maxX));
+          pageEl.scrollTop  = Math.max(0, Math.min(targetY, maxY));
+        });
+      });
+    } else {
+      pageEl.classList.remove('zoomed');
+      pageEl.scrollTop  = 0;
+      pageEl.scrollLeft = 0;
+      stageEl.classList.remove('is-zoomed');
+    }
+
+    updateZoomButton();
+  }
+
+  btnZoom.addEventListener('click', function () {
+    setZoom(!isCurrentZoomed(), null);
+  });
+
+  /* ============================================================
+     z-index / transform 工具
+     ============================================================ */
+  function refreshZIndex() {
+    pageEls.forEach(function (el, i) {
+      el.style.zIndex = (i === cur) ? '2' : '1';
+    });
+  }
+
+  function setTransformInstant(el, transform) {
+    el.classList.add('no-anim');
+    el.style.transform = transform;
+    void el.offsetWidth;
+    el.classList.remove('no-anim');
+  }
+
+  function finishFlip(newCur) {
+    cur = newCur;
+    updateHud();
+    refreshZIndex();
+    animating = false;
+    updateZoomButton();
+  }
+
+  function clearZoom() {
+    pageEls.forEach(function (el) {
+      if (el.classList.contains('zoomed')) {
+        el.classList.remove('zoomed');
+        el.scrollTop  = 0;
+        el.scrollLeft = 0;
+      }
+    });
+    stageEl.classList.remove('is-zoomed');
+  }
+
+  /* ============================================================
+     翻下一頁
+     ============================================================ */
+  function goNext() {
+    if (animating) return;
+    if (cur >= pageEls.length - 1) return;
+
+    clearZoom();
+    animating = true;
+
+    var curEl  = pageEls[cur];
+    var nextEl = pageEls[cur + 1];
+
+    setTransformInstant(nextEl, 'rotateY(0deg)');
+    nextEl.style.zIndex = '1';
+    nextEl.scrollTop = 0;
+
+    curEl.style.zIndex = '2';
+
+    curEl.classList.add('flipping');
+    void curEl.offsetWidth;
+    curEl.style.transform = 'rotateY(-180deg)';
+
+    setTimeout(function () {
+      curEl.classList.remove('flipping');
+      finishFlip(cur + 1);
+    }, FLIP_MS + 60);
+  }
+
+  /* ============================================================
+     翻上一頁
+     ============================================================ */
+  function goPrev() {
+    if (animating) return;
+    if (cur <= 0) return;
+
+    clearZoom();
+    animating = true;
+
+    var curEl  = pageEls[cur];
+    var prevEl = pageEls[cur - 1];
+
+    prevEl.scrollTop = 0;
+    prevEl.style.zIndex = '3';
+    curEl.style.zIndex  = '2';
+
+    prevEl.classList.add('flipping');
+    void prevEl.offsetWidth;
+    prevEl.style.transform = 'rotateY(0deg)';
+
+    setTimeout(function () {
+      prevEl.classList.remove('flipping');
+      finishFlip(cur - 1);
+    }, FLIP_MS + 80);
+  }
+
+  /* ============================================================
+     Home
+     ============================================================ */
+  function goHome() {
+    if (animating) return;
+    if (cur === 0 && !pageEls[0]) return;
+
+    pageEls.forEach(function (el) {
+      el.classList.add('no-anim');
+      el.classList.remove('flipped', 'flipping');
+      el.scrollTop  = 0;
+      el.scrollLeft = 0;
+    });
+
+    pageEls.forEach(function (el, i) {
+      el.classList.remove('zoomed');
+      el.style.transform = (i === 0) ? 'rotateY(0deg)' : 'rotateY(-180deg)';
+      el.style.zIndex    = (i === 0) ? '2' : '1';
+    });
+
+    stageEl.classList.remove('is-zoomed');
+    cur = 0;
+    updateHud();
+    updateZoomButton();
+
+    void stageEl.offsetWidth;
+
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        pageEls.forEach(function (el) { el.classList.remove('no-anim'); });
+      });
+    });
+  }
+
+  btnHome.addEventListener('click', goHome);
+
+  /* ============================================================
+     初始化
+     ============================================================ */
+  function startReader(projectName, pages) {
+    hudTitle.textContent = projectName;
+
+    stageEl.innerHTML = '';
+    pageEls = [];
+    cur = 0;
+    animating = false;
+
+    pages.forEach(function (p, i) {
+      var d = document.createElement('div');
+      d.className = 'page';
+
+      var img = document.createElement('img');
+      img.alt = '';
+      img.draggable = false;
+      img.src = p.src;
+
+      img.addEventListener('error', function () {
+        img.remove();
+        var msg = document.createElement('div');
+        msg.className = 'err';
+        msg.textContent = '圖片載入失敗';
+        d.appendChild(msg);
+      });
+
+      d.appendChild(img);
+
+      var coilOverlay = document.createElement('div');
+      coilOverlay.className = 'coil-overlay';
+      d.appendChild(coilOverlay);
+
+      d.style.zIndex    = (i === 0) ? '2' : '1';
+      d.style.transform = (i === 0) ? 'rotateY(0deg)' : 'rotateY(-180deg)';
+
+      stageEl.appendChild(d);
+      pageEls.push(d);
+    });
+
+    pages.forEach(function (p) {
+      var im = new Image();
+      im.src = p.src;
+    });
+
+    updateHud();
+    updateZoomButton();
+    loadingEl.classList.add('hidden');
+    readerEl.hidden = false;
+
+    setTimeout(function () { hintEl.classList.add('fade'); }, 3500);
+  }
+
+  /* ============================================================
+     手勢 / 點擊 / 雙擊
+     ============================================================ */
+  var pStartX = 0, pStartY = 0, pStartTime = 0, pTracking = false;
+  var lastTapTime = 0;
+  var tapTimer    = null;
+
+  stageEl.addEventListener('pointerdown', function (e) {
+    if (animating) return;
+    pTracking  = true;
+    pStartX    = e.clientX;
+    pStartY    = e.clientY;
+    pStartTime = Date.now();
+  });
+
+  stageEl.addEventListener('pointerup', function (e) {
+    if (!pTracking) return;
+    pTracking = false;
+    if (animating) return;
+
+    var dx = e.clientX - pStartX;
+    var dy = e.clientY - pStartY;
+    var dt = Date.now() - pStartTime;
+
+    var zoomed = isCurrentZoomed();
+
+    if (zoomed) {
+      if (Math.abs(dx) > 14 || Math.abs(dy) > 14 || dt >= 500) return;
+    } else {
+      if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+        if (dx < 0) goNext(); else goPrev();
+        return;
+      }
+      if (Math.abs(dx) >= 14 || Math.abs(dy) >= 14 || dt >= 500) return;
+    }
+
+    var now = Date.now();
+
+    if (now - lastTapTime < DBL_TAP_MS) {
+      clearTimeout(tapTimer);
+      tapTimer = null;
+      lastTapTime = 0;
+      setZoom(!isCurrentZoomed(), e);
+      return;
+    }
+
+    lastTapTime = now;
+    var tapX = e.clientX;
+
+    tapTimer = setTimeout(function () {
+      tapTimer = null;
+      lastTapTime = 0;
+
+      if (isCurrentZoomed()) return;
+
+      if (tapX < window.innerWidth / 2) {
+        goPrev();
+      } else {
+        goNext();
+      }
+    }, DBL_TAP_MS);
+  });
+
+  stageEl.addEventListener('pointercancel', function () {
+    pTracking = false;
+  });
+
+  /* ============================================================
+     桌機滑鼠拖拽
+     ============================================================ */
+  var mouseDrag = null;
+
+  stageEl.addEventListener('mousedown', function (e) {
+    var pageEl = pageEls[cur];
+    if (!pageEl || !pageEl.classList.contains('zoomed')) return;
+    if (e.button !== 0) return;
+
+    mouseDrag = {
+      x: e.clientX,
+      y: e.clientY,
+      scrollLeft: pageEl.scrollLeft,
+      scrollTop:  pageEl.scrollTop
+    };
+    pageEl.classList.add('dragging');
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', function (e) {
+    if (!mouseDrag) return;
+    var pageEl = pageEls[cur];
+    if (!pageEl) return;
+
+    pageEl.scrollLeft = mouseDrag.scrollLeft - (e.clientX - mouseDrag.x);
+    pageEl.scrollTop  = mouseDrag.scrollTop  - (e.clientY - mouseDrag.y);
+  });
+
+  document.addEventListener('mouseup', function () {
+    if (!mouseDrag) return;
+    mouseDrag = null;
+    var pageEl = pageEls[cur];
+    if (pageEl) pageEl.classList.remove('dragging');
+  });
+
+  /* ============================================================
+     滑鼠滾輪
+     ============================================================ */
+  window.addEventListener('wheel', function (e) {
+    var pageEl = pageEls[cur];
+    if (!pageEl || !pageEl.classList.contains('zoomed')) return;
+    if (pageEl === e.target || pageEl.contains(e.target)) return;
+
+    pageEl.scrollTop  += e.deltaY;
+    pageEl.scrollLeft += e.deltaX;
+    e.preventDefault();
+  }, { passive: false });
+
+  /* ============================================================
+     鍵盤
+     ============================================================ */
+  document.addEventListener('keydown', function (e) {
+    if (readerEl.hidden) return;
+
+    switch (e.key) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+      case 'PageDown':
+      case ' ':
+        e.preventDefault();
+        if (!isCurrentZoomed()) goNext();
+        break;
+      case 'ArrowLeft':
+      case 'ArrowUp':
+      case 'PageUp':
+        e.preventDefault();
+        if (!isCurrentZoomed()) goPrev();
+        break;
+      case 'Home':
+        e.preventDefault();
+        goHome();
+        break;
+      case 'z':
+      case 'Z':
+        e.preventDefault();
+        setZoom(!isCurrentZoomed(), null);
+        break;
+      case 'Escape':
+        e.preventDefault();
+        if (isCurrentZoomed()) {
+          setZoom(false, null);
+        } else {
+          goHome();
+        }
+        break;
+    }
+  });
+
+  /* ============================================================
+     啟動：從網址參數取得專案編號並載入
+     ============================================================ */
+  (function init() {
+    var params = new URLSearchParams(location.search);
+    var projectId = params.get('project');
+
+    if (!projectId) {
+      showError('未指定專案。');
+      return;
+    }
+
+    db.ref('projects/' + projectId).once('value')
+      .then(function (snap) {
+        var data = snap.val();
+
+        if (!data) {
+          showError('找不到這個專案，可能已被刪除。');
+          return;
+        }
+
+        var pages = [];
+        if (data.pages && typeof data.pages === 'object') {
+          Object.keys(data.pages).sort(pageKeySort).forEach(function (k) {
+            var p = data.pages[k];
+            if (p && typeof p === 'object' && p.src) {
+              pages.push({
+                id: p.id || k,
+                src:
